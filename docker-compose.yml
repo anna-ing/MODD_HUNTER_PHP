@@ -1,0 +1,88 @@
+services:
+  # PHP-FPM: ejecuta la aplicación Laravel
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mood_hunter_app
+    restart: unless-stopped
+    working_dir: /var/www/html
+    environment:
+      # Estas variables sobreescriben las del archivo .env dentro del contenedor
+      APP_ENV: local
+      APP_DEBUG: "true"
+      APP_URL: http://localhost:8080
+      DB_CONNECTION: mysql
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_DATABASE: puesto_dev_modd_hunter
+      DB_USERNAME: mood_hunter
+      DB_PASSWORD: secret
+    volumes:
+      - .:/var/www/html
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - mood_hunter
+
+  # Nginx: sirve los archivos estáticos y pasa las peticiones PHP a FPM
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: mood_hunter_nginx
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - .:/var/www/html
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - app
+    networks:
+      - mood_hunter
+
+  # MySQL: base de datos de la aplicación
+  db:
+    image: mysql:8.0
+    container_name: mood_hunter_db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: puesto_dev_modd_hunter
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_USER: mood_hunter
+      MYSQL_PASSWORD: secret
+    ports:
+      - "3307:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - mood_hunter
+
+  # Vite: servidor de desarrollo de assets (hot reload de CSS/JS)
+  vite:
+    image: node:20-alpine
+    container_name: mood_hunter_vite
+    working_dir: /var/www/html
+    restart: unless-stopped
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    ports:
+      - "5173:5173"
+    volumes:
+      - .:/var/www/html
+      # node_modules propio del contenedor (evita conflictos con binarios de Windows)
+      - /var/www/html/node_modules
+    networks:
+      - mood_hunter
+
+volumes:
+  db_data:
+
+networks:
+  mood_hunter:
+    driver: bridge
